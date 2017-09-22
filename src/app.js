@@ -1,26 +1,16 @@
 var globalInvokeLaterStack = []
 
 export function app(props) {
-  var appState
+  var appState = props.state
   var appView = props.view
   var appActions = {}
-  var appEvents = {}
-  var appMixins = props.mixins || []
+  var appEvents = []
   var appRoot = props.root || document.body
   var element
   var oldNode
   var renderLock
 
-  appMixins.concat(props).map(function(mixin) {
-    mixin = typeof mixin === "function" ? mixin(emit) : mixin
-
-    Object.keys(mixin.events || {}).map(function(key) {
-      appEvents[key] = (appEvents[key] || []).concat(mixin.events[key])
-    })
-
-    appState = merge(appState, mixin.state)
-    initialize(appActions, mixin.actions)
-  })
+  initialize(appActions, props.actions, [])
 
   requestRender(
     (oldNode = emit("load", (element = appRoot.children[0]))) === element &&
@@ -29,21 +19,69 @@ export function app(props) {
 
   return emit
 
-  function initialize(actions, withActions, lastName) {
+  function getPath(path, source) {
+    return path.reduce(function(result, key) {
+      return result[key]
+    }, source)
+  }
+
+  function setPath(path, value, source) {
+    var name = path[0]
+    return path.length === 0
+      ? value
+      : setProp(
+          name,
+          path.length > 1
+            ? setPath(
+                path.slice(1),
+                value,
+                source != null && name in source
+                  ? source[name]
+                  : path[1] >= 0 ? [] : {}
+              )
+            : value,
+          source
+        )
+  }
+
+  function setProp(prop, value, source) {
+    var target = {}
+
+    for (var key in source) {
+      target[key] = source[key]
+    }
+
+    target[prop] = value
+
+    return target
+  }
+
+  function initialize(actions, withActions, lastPath) {
     Object.keys(withActions || {}).map(function(key) {
       var action = withActions[key]
-      var name = lastName ? lastName + "." + key : key
+      var path = lastPath.concat(key)
 
       if (typeof action === "function") {
         actions[key] = function(data) {
-          emit("action", { name: name, data: data })
+          emit("action", { name: path.join("."), data: data })
 
-          var result = emit("resolve", action(appState, appActions, data))
+          var result = emit(
+            "resolve",
+            action(
+              getPath(lastPath, appState),
+              getPath(lastPath, appActions),
+              data
+            )
+          )
 
-          return typeof result === "function" ? result(update) : update(result)
+          return typeof result === "function"
+            ? result(function(withState) {
+                return update(lastPath, withState)
+              })
+            : update(lastPath, result)
         }
       } else {
-        initialize(actions[key] || (actions[key] = {}), action, name)
+        initialize(actions[key] || (actions[key] = {}), action, path)
       }
     })
   }
@@ -65,11 +103,18 @@ export function app(props) {
     }
   }
 
-  function update(withState) {
+  function update(path, withState) {
+    var partialState = getPath(path, appState)
     if (typeof withState === "function") {
-      return update(withState(appState))
+      return update(path, withState(partialState))
     }
-    if (withState && (withState = emit("update", merge(appState, withState)))) {
+    if (
+      withState &&
+      (withState = emit(
+        "update",
+        setPath(path, merge(partialState, withState), appState)
+      ))
+    ) {
       requestRender((appState = withState))
     }
     return appState
