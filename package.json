@@ -1,7 +1,7 @@
 {
   "name": "noobhyper",
   "description": "JavaScript micro-framework for building web applications.",
-  "version": "2.0.0-beta.0",
+  "version": "2.0.0-beta.00",
   "main": "dist/hyperapp.js",
   "module": "src/index.js",
   "typings": "hyperapp.d.ts",
